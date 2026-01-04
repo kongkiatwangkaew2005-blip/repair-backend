@@ -17,8 +17,8 @@ const allowedOrigins = [
     'http://localhost:3001',
     'http://localhost:3000',
     'http://localhost:5173',
-    // ✅ เพิ่ม URL ของ Netlify จริง
-    'https://repair-syste.netlify.app/'
+    // ✅ เพิ่ม URL ของ Netlify จริง (ไม่มี / ต่อท้าย)
+    'https://repair-syste.netlify.app'
 ];
 
 app.use(cors({
@@ -34,6 +34,7 @@ app.use(cors({
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     credentials: true,
 }));
+
 
 app.use(express.json());
 
