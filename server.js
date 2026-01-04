@@ -6,7 +6,7 @@ console.log("✅ DEBUG: JWT_SECRET =", process.env.JWT_SECRET);
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const app = express();
