@@ -7,6 +7,7 @@ const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+
 const jwt = require("jsonwebtoken");
 
 const app = express();
@@ -17,7 +18,7 @@ const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:5173',
     // ✅ เพิ่ม URL ของ Netlify จริง
-    'https://effervescent-sunflower-6358fa.netlify.app'
+    'https://repair-syste.netlify.app/'
 ];
 
 app.use(cors({
