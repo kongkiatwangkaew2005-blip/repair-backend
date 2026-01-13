@@ -7,6 +7,9 @@ const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 
 const jwt = require("jsonwebtoken");
 
@@ -38,6 +41,22 @@ app.use(cors({
 
 app.use(express.json());
 
+// serve uploaded files
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+app.use('/uploads', express.static(uploadDir));
+
+// multer storage
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) { cb(null, uploadDir); },
+  filename: function (req, file, cb) {
+    const unique = Date.now() + '-' + Math.round(Math.random()*1e9);
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, `${unique}-${safe}`);
+  }
+});
+const upload = multer({ storage });
+
 // ----------------- ✅ การเชื่อมต่อ MongoDB -----------------
 const mongoUri = process.env.MONGO_URI; // ใช้ค่าใหม่จาก .env เท่านั้น
 
@@ -50,6 +69,7 @@ const requestSchema = new mongoose.Schema({
   device: String,
   problem: String,
   reporter: String,
+  images: [String],
   status: { type: String, default: "รอดำเนินการ" },
   date: String,
   updatedAt: String
@@ -123,16 +143,32 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ✅ API: แจ้งซ่อม
-app.post("/api/requests", async (req, res) => {
+// Accept JSON or multipart/form-data (with up to 2 images)
+app.post("/api/requests", upload.array('images', 2), async (req, res) => {
   try {
+    const body = req.body || {};
+    const images = [];
+    if (req.files && req.files.length) {
+      req.files.forEach(f => {
+        // full public URL
+        const host = req.get('host');
+        const protocol = req.protocol;
+        images.push(`${protocol}://${host}/uploads/${f.filename}`);
+      });
+    }
+
     const newRequest = new Request({
-      ...req.body,
-      date: req.body.date || new Date().toISOString().slice(0, 10),
+      device: body.device || body.device,
+      problem: body.problem || body.problem,
+      reporter: body.reporter || body.reporter,
+      images: images.length ? images : (body.images || []),
+      date: body.date || new Date().toISOString().slice(0, 10),
       updatedAt: new Date().toISOString()
     });
     const saved = await newRequest.save();
     res.status(201).json(saved);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "เกิดข้อผิดพลาดในการบันทึก" });
   }
 });
