@@ -148,13 +148,54 @@ app.post("/api/requests", upload.array('images', 2), async (req, res) => {
   try {
     const body = req.body || {};
     const images = [];
+    const host = req.get('host');
+    const protocol = req.protocol;
+
+    // 1) files uploaded via multipart/form-data (multer)
     if (req.files && req.files.length) {
       req.files.forEach(f => {
-        // full public URL
-        const host = req.get('host');
-        const protocol = req.protocol;
         images.push(`${protocol}://${host}/uploads/${f.filename}`);
       });
+    }
+
+    // 2) files may be present as base64 data URLs in body.images (handle gracefully)
+    // Normalize body.images to an array if present
+    const extra = body.images ? (Array.isArray(body.images) ? body.images : [body.images]) : [];
+    for (const item of extra) {
+      if (!item) continue;
+      // if item is already a hosted URL, keep it
+      if (typeof item === 'string' && (item.startsWith('http://') || item.startsWith('https://'))) {
+        images.push(item);
+        continue;
+      }
+
+      // if it's a data URL (base64), decode and save to disk
+      if (typeof item === 'string' && item.startsWith('data:')) {
+        // data:[<mediatype>][;base64],<data>
+        const matches = item.match(/^data:(image\/[^;]+);base64,(.+)$/);
+        if (matches) {
+          const mime = matches[1];
+          const b64 = matches[2];
+          const ext = mime.split('/')[1].replace(/\+/g, '');
+          const filename = Date.now() + '-' + Math.round(Math.random()*1e9) + '.' + ext;
+          const filepath = path.join(uploadDir, filename);
+          try {
+            fs.writeFileSync(filepath, Buffer.from(b64, 'base64'));
+            images.push(`${protocol}://${host}/uploads/${filename}`);
+          } catch (e) {
+            console.error('Failed to write decoded image', e);
+          }
+        }
+        continue;
+      }
+
+      // If item looks like a server-relative path (/uploads/...), convert to full URL
+      if (typeof item === 'string' && (item.startsWith('/uploads') || item.startsWith('uploads'))) {
+        const rel = item.startsWith('/') ? item : `/${item}`;
+        images.push(`${protocol}://${host}${rel}`);
+        continue;
+      }
+      // otherwise ignore unknown formats
     }
 
     const newRequest = new Request({
