@@ -1,4 +1,4 @@
-// โหลดค่า .env
+// server.js // โหลดค่า .env
 require('dotenv').config({ path: __dirname + '/.env' });
 
 console.log("✅ DEBUG: JWT_SECRET =", process.env.JWT_SECRET);
@@ -20,7 +20,6 @@ const allowedOrigins = [
     'http://localhost:3001',
     'http://localhost:3000',
     'http://localhost:5173',
-    // ✅ เพิ่ม URL ของ Netlify จริง (ไม่มี / ต่อท้าย)
     'https://repair-syste.netlify.app'
 ];
 
@@ -37,7 +36,6 @@ app.use(cors({
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     credentials: true,
 }));
-
 
 app.use(express.json());
 
@@ -58,7 +56,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // ----------------- ✅ การเชื่อมต่อ MongoDB -----------------
-const mongoUri = process.env.MONGO_URI; // ใช้ค่าใหม่จาก .env เท่านั้น
+const mongoUri = process.env.MONGO_URI;
 
 mongoose.connect(mongoUri)
   .then(() => console.log("✅ Connected to MongoDB Atlas"))
@@ -69,7 +67,7 @@ const requestSchema = new mongoose.Schema({
   device: String,
   problem: String,
   reporter: String,
-  images: [String],
+  images: [String], // จะเก็บเป็นชื่อไฟล์ เช่น "12345-image.jpg"
   status: { type: String, default: "รอดำเนินการ" },
   date: String,
   updatedAt: String
@@ -124,12 +122,10 @@ function adminOnly(req, res, next) {
 
 // ------------------ Routes ------------------
 
-// ✅ Route หลัก
 app.get('/', (req, res) => {
   res.send('✅ Repair System Backend is running!');
 });
 
-// ✅ ล็อกอินแอดมิน
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'กรอกข้อมูลให้ครบ' });
@@ -142,67 +138,54 @@ app.post('/api/auth/login', async (req, res) => {
   res.json({ token });
 });
 
-// ✅ API: แจ้งซ่อม
-// Accept JSON or multipart/form-data (with up to 2 images)
+// ✅ API: แจ้งซ่อม (แก้ไขจุดเก็บรูป)
 app.post("/api/requests", upload.array('images', 2), async (req, res) => {
   try {
     const body = req.body || {};
-    const images = [];
-    const host = req.get('host');
-    const protocol = req.protocol;
+    let images = [];
 
-    // 1) files uploaded via multipart/form-data (multer)
+    // 1) จัดการไฟล์จาก Multer - เก็บเฉพาะชื่อไฟล์ลง DB
     if (req.files && req.files.length) {
       req.files.forEach(f => {
-        images.push(`${protocol}://${host}/uploads/${f.filename}`);
+        images.push(f.filename); 
       });
     }
 
-    // 2) files may be present as base64 data URLs in body.images (handle gracefully)
-    // Normalize body.images to an array if present
+    // 2) จัดการไฟล์ Base64 (ถ้ามี)
     const extra = body.images ? (Array.isArray(body.images) ? body.images : [body.images]) : [];
     for (const item of extra) {
       if (!item) continue;
-      // if item is already a hosted URL, keep it
-      if (typeof item === 'string' && (item.startsWith('http://') || item.startsWith('https://'))) {
+      
+      // ถ้าเป็น URL อยู่แล้ว (เช่นจากที่อื่น) ให้เก็บตามเดิม
+      if (typeof item === 'string' && (item.startsWith('http'))) {
         images.push(item);
         continue;
       }
 
-      // if it's a data URL (base64), decode and save to disk
+      // ถ้าเป็น Base64 ให้ decode และเซฟลง uploads/ แล้วเก็บแค่ชื่อไฟล์
       if (typeof item === 'string' && item.startsWith('data:')) {
-        // data:[<mediatype>][;base64],<data>
         const matches = item.match(/^data:(image\/[^;]+);base64,(.+)$/);
         if (matches) {
           const mime = matches[1];
           const b64 = matches[2];
           const ext = mime.split('/')[1].replace(/\+/g, '');
-          const filename = Date.now() + '-' + Math.round(Math.random()*1e9) + '.' + ext;
+          const filename = `base64-${Date.now()}-${Math.round(Math.random()*1e9)}.${ext}`;
           const filepath = path.join(uploadDir, filename);
           try {
             fs.writeFileSync(filepath, Buffer.from(b64, 'base64'));
-            images.push(`${protocol}://${host}/uploads/${filename}`);
+            images.push(filename); 
           } catch (e) {
             console.error('Failed to write decoded image', e);
           }
         }
-        continue;
       }
-
-      // If item looks like a server-relative path (/uploads/...), convert to full URL
-      if (typeof item === 'string' && (item.startsWith('/uploads') || item.startsWith('uploads'))) {
-        const rel = item.startsWith('/') ? item : `/${item}`;
-        images.push(`${protocol}://${host}${rel}`);
-        continue;
-      }
-      // otherwise ignore unknown formats
     }
 
     const newRequest = new Request({
-      device: body.device || body.device,
-      problem: body.problem || body.problem,
-      reporter: body.reporter || body.reporter,
-      images: images.length ? images : (body.images || []),
+      device: body.device,
+      problem: body.problem,
+      reporter: body.reporter,
+      images: images, // เก็บ Array ของชื่อไฟล์
       date: body.date || new Date().toISOString().slice(0, 10),
       updatedAt: new Date().toISOString()
     });
@@ -214,36 +197,43 @@ app.post("/api/requests", upload.array('images', 2), async (req, res) => {
   }
 });
 
-// ✅ API: ดูรายการแจ้งซ่อม
 app.get("/api/requests", async (req, res) => {
   try {
     const { reporter } = req.query;
+    let list;
     if (reporter) {
-      const list = await Request.find({ reporter });
-      return res.json(list);
+      list = await Request.find({ reporter });
     } else {
       const auth = req.headers.authorization;
       if (!auth || !auth.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'ต้องการการยืนยันตัวตน' });
       }
       const token = auth.split(' ')[1];
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
-        if (decoded.role !== 'admin') {
-          return res.status(403).json({ error: 'ไม่อนุญาต' });
-        }
-        const all = await Request.find({});
-        return res.json(all);
-      } catch (e) {
-        return res.status(401).json({ error: 'โทเคนไม่ถูกต้องหรือหมดอายุ' });
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
+      if (decoded.role !== 'admin') {
+        return res.status(403).json({ error: 'ไม่อนุญาต' });
       }
+      list = await Request.find({});
     }
+
+    // ก่อนส่งไป Frontend: แปลงชื่อไฟล์ให้เป็น URL เต็ม (เฉพาะตอนตอบกลับ)
+    const host = req.get('host');
+    const protocol = req.protocol;
+    const formattedList = list.map(item => {
+      const doc = item.toObject();
+      doc.images = doc.images.map(img => {
+        if (img.startsWith('http')) return img;
+        return `${protocol}://${host}/uploads/${img}`;
+      });
+      return doc;
+    });
+
+    res.json(formattedList);
   } catch (err) {
     res.status(500).json({ error: "เกิดข้อผิดพลาดในการดึงข้อมูล" });
   }
 });
 
-// ✅ API: เปลี่ยนสถานะคำร้อง
 app.patch("/api/requests/:id", authRequired, adminOnly, async (req, res) => {
   try {
     const updated = await Request.findByIdAndUpdate(
@@ -258,7 +248,6 @@ app.patch("/api/requests/:id", authRequired, adminOnly, async (req, res) => {
   }
 });
 
-// ✅ API: ลบรายการแจ้งซ่อมที่เก่ากว่า 30 วัน
 app.delete("/api/requests/older-than-30-days", authRequired, adminOnly, async (req, res) => {
   try {
     const today = new Date();
@@ -271,7 +260,6 @@ app.delete("/api/requests/older-than-30-days", authRequired, adminOnly, async (r
   }
 });
 
-// ✅ API: แจ้งเหตุการณ์
 app.post("/api/incidents", async (req, res) => {
   try {
     const newIncident = new Incident({
@@ -285,7 +273,6 @@ app.post("/api/incidents", async (req, res) => {
   }
 });
 
-// ----------------- ✅ เริ่มเซิร์ฟเวอร์ -----------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
