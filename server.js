@@ -237,9 +237,12 @@ app.get("/api/requests", async (req, res) => {
 
 app.patch("/api/requests/:id", authRequired, adminOnly, async (req, res) => {
   try {
+    const updateData = { updatedAt: new Date().toISOString() };
+    if (req.body.status !== undefined) updateData.status = req.body.status;
+    if (req.body.adminMessage !== undefined) updateData.adminMessage = req.body.adminMessage;
     const updated = await Request.findByIdAndUpdate(
       req.params.id,
-      { status: req.body.status, updatedAt: new Date().toISOString() },
+      updateData,
       { new: true }
     );
     if (!updated) return res.status(404).send("ไม่พบคำร้อง");
