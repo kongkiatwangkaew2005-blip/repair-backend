@@ -94,7 +94,7 @@ const adminUser = {
 // ✅ สร้าง JWT
 function signToken(payload) {
   const secret = process.env.JWT_SECRET || 'dev-secret';
-  return jwt.sign(payload, secret, { expiresIn: '2h' });
+  return jwt.sign(payload, secret, { expiresIn: '24h' });
 }
 
 // ✅ ตรวจ JWT
