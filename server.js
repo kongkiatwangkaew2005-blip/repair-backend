@@ -70,7 +70,8 @@ const requestSchema = new mongoose.Schema({
   images: [String], // จะเก็บเป็นชื่อไฟล์ เช่น "12345-image.jpg"
   status: { type: String, default: "รอดำเนินการ" },
   date: String,
-  updatedAt: String
+  updatedAt: String,
+  adminMessage: String
 });
 const Request = mongoose.model("Request", requestSchema);
 
