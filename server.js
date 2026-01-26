@@ -20,6 +20,8 @@ const allowedOrigins = [
     'http://localhost:3001',
     'http://localhost:3000',
     'http://localhost:5173',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
     'https://repair-syste.netlify.app'
 ];
 
@@ -84,6 +86,17 @@ const incidentSchema = new mongoose.Schema({
 });
 const Incident = mongoose.model("Incident", incidentSchema);
 
+// ✅ Schema: ผู้ใช้
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  phone: { type: String, required: true },
+  role: { type: String, default: 'user' }
+});
+const User = mongoose.model("User", userSchema);
+
 // ✅ ผู้ใช้แอดมิน (เดโม)
 const adminUser = {
   username: 'admin',
@@ -127,16 +140,43 @@ app.get('/', (req, res) => {
   res.send('✅ Repair System Backend is running!');
 });
 
+app.post('/api/auth/register', async (req, res) => {
+  const { name, username, email, password, phone } = req.body;
+  if (!name || !username || !email || !password || !phone) {
+    return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบทุกช่อง' });
+  }
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = new User({ name, username, email, password: hashedPassword, phone });
+    await newUser.save();
+    res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ' });
+  } catch (err) {
+    if (err.code === 11000) {
+      res.status(400).json({ error: 'ชื่อผู้ใช้หรืออีเมลซ้ำ' });
+    } else {
+      res.status(500).json({ error: 'เกิดข้อผิดพลาด' });
+    }
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'กรอกข้อมูลให้ครบ' });
-  if (username !== adminUser.username) return res.status(401).json({ error: 'ผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
-
-  const isValid = await bcrypt.compare(password, adminUser.passwordHash);
+  // Check admin first
+  if (username === adminUser.username) {
+    const isValid = await bcrypt.compare(password, adminUser.passwordHash);
+    if (isValid) {
+      const token = signToken({ username: adminUser.username, role: adminUser.role });
+      return res.json({ token, role: 'admin' });
+    }
+  }
+  // Check user
+  const user = await User.findOne({ username });
+  if (!user) return res.status(401).json({ error: 'ผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+  const isValid = await bcrypt.compare(password, user.password);
   if (!isValid) return res.status(401).json({ error: 'ผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
-
-  const token = signToken({ username: adminUser.username, role: adminUser.role });
-  res.json({ token });
+  const token = signToken({ username: user.username, role: user.role || 'user', id: user._id });
+  res.json({ token, role: user.role || 'user' });
 });
 
 // ✅ API: แจ้งซ่อม (แก้ไขจุดเก็บรูป)
@@ -280,4 +320,29 @@ app.post("/api/incidents", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
+});
+
+// ✅ API: ดึงข้อมูลผู้ใช้ตาม username (เฉพาะแอดมิน)
+app.get('/api/users/:username', authRequired, adminOnly, async (req, res) => {
+  try {
+    const username = req.params.username;
+    const user = await User.findOne({ username }).select('-password -__v');
+    if (!user) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการค้นหาผู้ใช้' });
+  }
+});
+
+// Public endpoint: check if a username exists (used by frontend before creating a request)
+app.get('/api/users/exists/:username', async (req, res) => {
+  try {
+    const username = req.params.username;
+    const user = await User.findOne({ username }).select('_id username');
+    if (!user) return res.status(404).json({ exists: false });
+    return res.json({ exists: true, username: user.username });
+  } catch (err) {
+    console.error('Error checking user exists', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการตรวจสอบผู้ใช้' });
+  }
 });
