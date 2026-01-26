@@ -6,7 +6,7 @@ console.log("✅ DEBUG: JWT_SECRET =", process.env.JWT_SECRET);
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
+const bcrypt = require("bcrypt");
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -149,7 +149,7 @@ app.post('/api/auth/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({ name, username, email, password: hashedPassword, phone });
     await newUser.save();
-    res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ' });
+      res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ' });
   } catch (err) {
     if (err.code === 11000) {
       res.status(400).json({ error: 'ชื่อผู้ใช้หรืออีเมลซ้ำ' });
@@ -164,7 +164,7 @@ app.post('/api/auth/login', async (req, res) => {
   if (!username || !password) return res.status(400).json({ error: 'กรอกข้อมูลให้ครบ' });
   // Check admin first
   if (username === adminUser.username) {
-    const isValid = await bcrypt.compare(password, adminUser.passwordHash);
+      const isValid = await bcrypt.compare(password, adminUser.passwordHash);
     if (isValid) {
       const token = signToken({ username: adminUser.username, role: adminUser.role });
       return res.json({ token, role: 'admin' });
